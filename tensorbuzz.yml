@@ -1,0 +1,10 @@
+base_image: kaspernj/tensorbuzz-base-ubuntu-26-04:latest
+before_script:
+  - node -v
+  - npm ci
+script:
+  - npm run lint
+  - npm run typecheck
+  - npm test
+  - npm run build
+  - npm run package-dry-run
