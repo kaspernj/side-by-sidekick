@@ -1,0 +1,57 @@
+{
+  "name": "side-by-sidekick",
+  "version": "1.0.0",
+  "description": "Run several shell commands concurrently, but see their output presented one at a time, in argument order.",
+  "keywords": [
+    "cli",
+    "concurrently",
+    "parallel",
+    "shell",
+    "side-by-side",
+    "task-runner"
+  ],
+  "homepage": "https://github.com/kaspernj/side-by-sidekick#readme",
+  "bugs": {
+    "url": "https://github.com/kaspernj/side-by-sidekick/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kaspernj/side-by-sidekick.git"
+  },
+  "license": "MIT",
+  "author": "Kasper Johansen",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.js"
+    }
+  },
+  "bin": {
+    "side-by-sidekick": "./build/cli.js"
+  },
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "lint": "eslint . && npm run typecheck",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.js",
+    "build": "tsc -p tsconfig.build.json && chmod +x build/cli.js",
+    "package-dry-run": "node scripts/verify-package.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-jsdoc": "^50.0.0",
+    "globals": "^15.0.0",
+    "typescript": "^5.5.0"
+  }
+}
