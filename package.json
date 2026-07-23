@@ -1,6 +1,6 @@
 {
   "name": "side-by-sidekick",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Run several shell commands concurrently, but see their output presented one at a time, in argument order.",
   "keywords": [
     "cli",
