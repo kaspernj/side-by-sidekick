@@ -35,7 +35,14 @@ const unexpected = files.filter((file) => !file.startsWith('build/') && !allowed
 if (unexpected.length > 0) {
   throw new Error(`Unexpected files would be published: ${unexpected.join(', ')}`);
 }
-for (const required of ['build/cli.js', 'build/index.js', 'build/runner.js', 'build/index.d.ts']) {
+for (const required of [
+  'build/cli.js',
+  'build/index.js',
+  'build/runner.js',
+  'build/index.d.ts',
+  'build/run-command.js',
+  'build/run-command.d.ts',
+]) {
   if (!files.includes(required)) {
     throw new Error(`Expected ${required} in the package tarball - did you run "npm run build" first?`);
   }
@@ -45,7 +52,11 @@ console.log(`OK: ${files.length} files would be published, none of them src/ or 
 console.log('Running consumer smoke test...');
 const scratchDir = mkdtempSync(join(tmpdir(), 'side-by-sidekick-smoke-'));
 try {
-  const tarballName = run('npm', ['pack', '--pack-destination', scratchDir]).trim();
+  const tarballName = run('npm', ['pack', '--pack-destination', scratchDir])
+    .trim()
+    .split('\n')
+    .at(-1);
+  if (!tarballName) throw new Error('npm pack did not report a tarball filename.');
   const tarballPath = join(scratchDir, tarballName);
 
   const consumerDir = join(scratchDir, 'consumer');
@@ -61,7 +72,16 @@ try {
   if (!output.includes('1') || !output.includes('2') || !/exit 0/.test(output)) {
     throw new Error(`Unexpected smoke test output:\n${output}`);
   }
-  console.log('OK: installed the tarball into a scratch project and ran it via npx.');
+
+  const runCommandOutput = run('node', [
+    '--input-type=module',
+    '--eval',
+    `import {runCommand} from 'side-by-sidekick/run-command';
+     const result = await runCommand(process.execPath, ['--eval', 'console.log("bounded")'], {deadlineMs: 1000});
+     if (result.status !== 'success' || !result.output.includes('bounded')) process.exit(1);`,
+  ], {cwd: consumerDir});
+  if (runCommandOutput !== '') throw new Error(`Unexpected runCommand smoke output:\n${runCommandOutput}`);
+  console.log('OK: installed the tarball and exercised the CLI and bounded runCommand API.');
 } finally {
   rmSync(scratchDir, { recursive: true, force: true });
 }
