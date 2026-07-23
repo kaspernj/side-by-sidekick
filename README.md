@@ -97,6 +97,41 @@ const result = await runCommands(['npm test', 'npm run lint']);
   `process.stdout` / `process.stderr`). Handy for capturing output in tests or other tooling.
 - `signal` — an `AbortSignal`; aborting terminates every still-running command.
 
+### Bounded single-command API
+
+For callers that need one command with a real deadline and bounded diagnostics, use the dedicated
+deep import. The command is executed directly with an argument array and never through a shell.
+
+```js
+import {runCommand} from 'side-by-sidekick/run-command';
+
+const result = await runCommand(process.execPath, ['tool.js', '--check'], {
+  deadlineMs: 60_000,
+  killGraceMs: 2_000,
+  forceKillWaitMs: 5_000,
+  maxOutputBytes: 65_536,
+});
+```
+
+`runCommand(command, args, options)`:
+
+- returns `success`, `non-zero-exit`, `signal-exit`, `deadline-exceeded`, `cancelled`,
+  `spawn-failure`, or `termination-failure`;
+- sends SIGTERM at the deadline or on cancellation, waits `killGraceMs`, then sends SIGKILL and
+  waits at most `forceKillWaitMs` for the owned process scope to disappear and the direct child to
+  close;
+- creates and signals an owned process group on POSIX, covering descendants; Node has no equivalent
+  built-in process-tree primitive on Windows, so Windows guarantees direct-child termination only;
+- captures the chronological combined stdout/stderr tail, with `maxOutputBytes` defaulting to
+  65,536 bytes. `outputBytes` reports total observed bytes and `outputTruncated` explicitly reports
+  head truncation;
+- can also stream stdout/stderr to optional destinations while honoring writable backpressure; and
+- accepts an `AbortSignal` whose cancellation follows the same termination and cleanup path.
+
+The result resolves only after `close` and, on POSIX, after the owned process group is gone. If that
+cannot be established within the bounded forced-kill wait, the result is `termination-failure` and
+the runner releases its descriptors instead of pretending a retry would be safe.
+
 ## Requirements
 
 Node.js 22 or later. No runtime dependencies.

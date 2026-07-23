@@ -30,6 +30,10 @@
     ".": {
       "types": "./build/index.d.ts",
       "import": "./build/index.js"
+    },
+    "./run-command": {
+      "types": "./build/run-command.d.ts",
+      "import": "./build/run-command.js"
     }
   },
   "bin": {
@@ -44,6 +48,7 @@
     "test": "node --test test/*.test.js",
     "build": "tsc -p tsconfig.build.json && chmod +x build/cli.js",
     "package-dry-run": "node scripts/verify-package.mjs",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
