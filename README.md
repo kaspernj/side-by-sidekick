@@ -117,9 +117,9 @@ const result = await runCommand(process.execPath, ['tool.js', '--check'], {
 
 - returns `success`, `non-zero-exit`, `signal-exit`, `deadline-exceeded`, `cancelled`,
   `spawn-failure`, or `termination-failure`;
-- sends SIGTERM at the deadline or on cancellation, waits `killGraceMs`, then sends SIGKILL and
-  waits at most `forceKillWaitMs` for the owned process scope to disappear and the direct child to
-  close;
+- sends SIGTERM at the deadline, on cancellation, or when a closed direct child leaves live POSIX
+  descendants; waits `killGraceMs`; then sends SIGKILL and waits at most `forceKillWaitMs` for the
+  owned process scope to disappear and the direct child to close;
 - creates and signals an owned process group on POSIX, covering descendants; Node has no equivalent
   built-in process-tree primitive on Windows, so Windows guarantees direct-child termination only;
 - captures the chronological combined stdout/stderr tail, with `maxOutputBytes` defaulting to
@@ -130,7 +130,9 @@ const result = await runCommand(process.execPath, ['tool.js', '--check'], {
 
 The result resolves only after `close` and, on POSIX, after the owned process group is gone. If that
 cannot be established within the bounded forced-kill wait, the result is `termination-failure` and
-the runner releases its descriptors instead of pretending a retry would be safe.
+the runner releases its descriptors instead of pretending a retry would be safe. Cleanup of
+descendants left after a normal direct-child exit preserves that child's success, non-zero, or
+signal status and records the escalation in `termination`.
 
 ## Requirements
 

@@ -31,6 +31,15 @@ if (mode === 'success') {
   });
   process.stdout.write(`parent:${process.pid}\ndescendant:${descendant.pid}\n`);
   setInterval(() => {}, 60_000);
+} else if (mode === 'exit-with-descendant') {
+  const descendant = spawn(process.execPath, [new URL(import.meta.url).pathname, 'descendant'], {
+    stdio: 'ignore',
+  });
+  descendant.unref();
+  await new Promise((resolve) => {
+    process.stdout.write(`parent:${process.pid}\ndescendant:${descendant.pid}\n`, resolve);
+  });
+  process.exit(0);
 } else {
   throw new Error(`Unknown fixture mode: ${mode}`);
 }

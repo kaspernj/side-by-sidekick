@@ -239,7 +239,7 @@ export function runCommandWithDependencies(command, args, options, dependencies)
     const timers = new Set();
     /** @type {Array<{destination: NodeJS.WritableStream, listener: () => void, source: NodeJS.ReadableStream}>} */
     const drainListeners = [];
-    /** @type {'deadline-exceeded'|'cancelled'|'termination-failure'|null} */
+    /** @type {CompletedStatus|'termination-failure'|null} */
     let terminationCause = null;
     /** @type {Error|undefined} */
     let terminationError;
@@ -375,7 +375,7 @@ export function runCommandWithDependencies(command, args, options, dependencies)
     }
 
     /**
-     * @param {'deadline-exceeded'|'cancelled'|'termination-failure'} cause
+     * @param {CompletedStatus|'termination-failure'} cause
      * @param {Error} [initialError]
      * @returns {void}
      */
@@ -456,12 +456,18 @@ export function runCommandWithDependencies(command, args, options, dependencies)
       if (terminationCause) {
         closeOutcome = {exitCode, signal: closeSignal};
         settleTerminatedProcessIfGone();
-      } else if (exitCode === 0) {
-        settle('success', exitCode, closeSignal);
-      } else if (exitCode !== null) {
-        settle('non-zero-exit', exitCode, closeSignal);
       } else {
-        settle('signal-exit', exitCode, closeSignal);
+        closeOutcome = {exitCode, signal: closeSignal};
+        /** @type {CompletedStatus} */
+        let completedStatus;
+        if (exitCode === 0) completedStatus = 'success';
+        else if (exitCode !== null) completedStatus = 'non-zero-exit';
+        else completedStatus = 'signal-exit';
+
+        const processTreeAlive = processTreeIsAlive();
+        if (settled) return;
+        if (processTreeAlive) terminate(completedStatus);
+        else settle(completedStatus, exitCode, closeSignal);
       }
     }
 

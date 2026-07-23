@@ -103,6 +103,23 @@ test('POSIX deadlines terminate descendants in the owned process group', {
   assert.equal(await processIsGone(assertPid(result.pid)), true);
 });
 
+test('POSIX success waits for and terminates descendants left by the direct child', {
+  skip: process.platform === 'win32' ? 'Windows only guarantees direct-child termination' : false,
+}, async () => {
+  const result = await runFixture('exit-with-descendant');
+  const descendantMatch = result.output.match(/descendant:(\d+)/);
+
+  assert.equal(result.status, 'success');
+  assert.ok(descendantMatch);
+  const descendantPid = Number(descendantMatch[1]);
+  try {
+    assert.equal(await processIsGone(descendantPid), true);
+    assert.equal(result.termination, 'graceful');
+  } finally {
+    if (processExists(descendantPid)) process.kill(descendantPid, 'SIGKILL');
+  }
+});
+
 test('spawn failures are reported without an unhandled rejection', async () => {
   /** @type {unknown[]} */
   const unhandledRejections = [];
@@ -229,8 +246,10 @@ function createHarness(scenario) {
     pendingTimerCount: () => timers.size,
     start() {
       if (scenario === 'success') {
+        processTreeAlive = false;
         child.emit('close', 0, null);
       } else if (scenario === 'failure') {
+        processTreeAlive = false;
         child.emit('close', 3, null);
       } else if (scenario === 'spawn-error') {
         child.pid = undefined;
