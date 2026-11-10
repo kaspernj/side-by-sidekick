@@ -1,6 +1,7 @@
 // @ts-check
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
+import {readFile} from 'node:fs/promises';
 import {PassThrough} from 'node:stream';
 import {setImmediate as waitForImmediate} from 'node:timers/promises';
 import {test} from 'node:test';
@@ -30,17 +31,29 @@ function runFixture(mode, overrides = {}) {
 }
 
 /**
+ * A defunct process has already terminated and only its parent can remove it, so it counts as gone.
+ * The signal probe alone answers for a defunct process, so the state has to be read as well.
+ *
  * @param {number} pid
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-function processExists(pid) {
+async function processIsLive(pid) {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
     if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ESRCH') return false;
     throw error;
   }
+
+  let raw;
+  try {
+    raw = await readFile(`/proc/${pid}/stat`, 'utf8');
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return true;
+    throw error;
+  }
+
+  return raw.slice(raw.lastIndexOf(')') + 1).trim().split(' ')[0] !== 'Z';
 }
 
 test('returns success before the deadline', async () => {
@@ -116,7 +129,7 @@ test('POSIX success waits for and terminates descendants left by the direct chil
     assert.equal(await processIsGone(descendantPid), true);
     assert.equal(result.termination, 'graceful');
   } finally {
-    if (processExists(descendantPid)) process.kill(descendantPid, 'SIGKILL');
+    if (await processIsLive(descendantPid)) process.kill(descendantPid, 'SIGKILL');
   }
 });
 
@@ -194,8 +207,8 @@ function assertPid(pid) {
  */
 async function processIsGone(pid) {
   const deadline = Date.now() + 1_000;
-  while (processExists(pid) && Date.now() < deadline) await waitForImmediate();
-  return !processExists(pid);
+  while (await processIsLive(pid) && Date.now() < deadline) await waitForImmediate();
+  return !(await processIsLive(pid));
 }
 
 /**
@@ -217,7 +230,7 @@ function createHarness(scenario) {
     now: () => 10,
     platform: 'linux',
     spawn: () => child,
-    isProcessTreeAlive: () => processTreeAlive,
+    isProcessTreeAlive: async () => processTreeAlive,
     signalProcessTree: (_child, signal) => {
       if (signal === 'SIGKILL' && scenario === 'termination-failure') {
         throw new Error('SIGKILL failed');
