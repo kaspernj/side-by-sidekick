@@ -1,12 +1,11 @@
 // @ts-check
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-const configText = readFileSync(new URL('../tensorbuzz.yml', import.meta.url), 'utf8');
 
 /** Nothing any gate reads: a delivery touching only these must be filtered out. */
 const filesOutsideEveryGate = ['README.md', 'LICENSE', '.gitignore'];
@@ -95,24 +94,45 @@ function dependsOn(filePath, patterns) {
  *
  * @param {string} [directory] Absolute directory to walk.
  * @param {string} [prefix] Repo-relative prefix of that directory.
- * @returns {string[]} Sorted repo-relative file paths.
+ * @returns {Promise<string[]>} Sorted repo-relative file paths.
  */
-function listRepositoryFiles(directory = repoRoot, prefix = '') {
+async function listRepositoryFiles(directory = repoRoot, prefix = '') {
   /** @type {string[]} */
   const files = [];
-  for (const entry of readdirSync(join(directory, prefix), { withFileTypes: true })) {
-    if (ignoredDirectories.has(entry.name)) continue;
-    const relativePath = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) files.push(...listRepositoryFiles(directory, relativePath));
+  for (const entry of await readdir(join(directory, prefix))) {
+    if (ignoredDirectories.has(entry)) continue;
+    const relativePath = prefix.length > 0 ? `${prefix}/${entry}` : entry;
+    const entryStat = await stat(join(directory, relativePath));
+    if (entryStat.isDirectory()) files.push(...(await listRepositoryFiles(directory, relativePath)));
     else files.push(relativePath);
   }
   return files.sort();
 }
 
-const patterns = readPathPatterns(configText);
+/**
+ * @param {string} filePath Repo-relative path.
+ * @returns {Promise<boolean>}
+ */
+async function fileIsInRepository(filePath) {
+  try {
+    await stat(join(repoRoot, filePath));
+    return true;
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return false;
+    throw error;
+  }
+}
 
-test('tensorbuzz.yml declares paths, and every repository file is either a gate input or a known docs-only file', () => {
-  const uncovered = listRepositoryFiles().filter(
+/**
+ * @returns {Promise<string[]>}
+ */
+async function readDeclaredPatterns() {
+  return readPathPatterns(await readFile(new URL('../tensorbuzz.yml', import.meta.url), 'utf8'));
+}
+
+test('tensorbuzz.yml declares paths, and every repository file is either a gate input or a known docs-only file', async () => {
+  const patterns = await readDeclaredPatterns();
+  const uncovered = (await listRepositoryFiles()).filter(
     (file) =>
       !dependsOn(file, patterns) &&
       !alwaysBuiltFiles.includes(file) &&
@@ -126,9 +146,10 @@ test('tensorbuzz.yml declares paths, and every repository file is either a gate 
   );
 });
 
-test('a delivery that only touches documentation or git metadata is filtered out of the build', () => {
+test('a delivery that only touches documentation or git metadata is filtered out of the build', async () => {
+  const patterns = await readDeclaredPatterns();
   for (const file of filesOutsideEveryGate) {
-    assert.ok(existsSync(join(repoRoot, file)), `${file} is no longer in the repository - drop it from filesOutsideEveryGate`);
+    assert.ok(await fileIsInRepository(file), `${file} is no longer in the repository - drop it from filesOutsideEveryGate`);
     assert.equal(dependsOn(file, patterns), false, `${file} must stay outside paths, otherwise a docs-only delivery rebuilds everything`);
   }
 });
