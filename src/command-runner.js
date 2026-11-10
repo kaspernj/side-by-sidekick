@@ -54,7 +54,7 @@ import {createProcessControl} from './process-control.js';
  * @property {() => number} now Monotonic-enough wall-clock source for durations.
  * @property {NodeJS.Platform} platform Platform whose ownership semantics should be used.
  * @property {(child: import('node:child_process').ChildProcess, signal: NodeJS.Signals) => void} signalProcessTree Signals the owned process scope.
- * @property {(child: import('node:child_process').ChildProcess) => boolean} isProcessTreeAlive Checks whether the owned process scope remains alive.
+ * @property {(child: import('node:child_process').ChildProcess) => Promise<boolean>} isProcessTreeAlive Checks whether the owned process scope still holds a live process.
  * @property {(callback: () => void, delayMs: number) => unknown} setTimer Schedules one lifecycle deadline.
  * @property {(timer: unknown) => void} clearTimer Cancels one lifecycle deadline.
  */
@@ -350,27 +350,29 @@ export function runCommandWithDependencies(command, args, options, dependencies)
     }
 
     /**
-     * @returns {boolean}
+     * @returns {Promise<boolean>}
      */
-    function processTreeIsAlive() {
+    async function processTreeIsAlive() {
       try {
-        return dependencies.isProcessTreeAlive(child);
+        return await dependencies.isProcessTreeAlive(child);
       } catch (error) {
         failTermination(/** @type {Error} */ (error));
         return true;
       }
     }
 
-    /** @returns {void} */
-    function settleTerminatedProcessIfGone() {
-      if (settled || !terminationCause || !closeOutcome || processTreeIsAlive()) return;
+    /** @returns {Promise<void>} */
+    async function settleTerminatedProcessIfGone() {
+      if (settled || !terminationCause || !closeOutcome) return;
+      if (await processTreeIsAlive()) return;
+      if (settled) return;
       settle(terminationCause, closeOutcome.exitCode, closeOutcome.signal, terminationError);
     }
 
-    /** @returns {void} */
-    function pollForForcedExit() {
+    /** @returns {Promise<void>} */
+    async function pollForForcedExit() {
       if (settled) return;
-      settleTerminatedProcessIfGone();
+      await settleTerminatedProcessIfGone();
       if (!settled) schedule(pollForForcedExit, 10);
     }
 
@@ -386,10 +388,10 @@ export function runCommandWithDependencies(command, args, options, dependencies)
       termination = 'graceful';
       releaseBackpressure();
       if (!signalTree('SIGTERM')) return;
-      schedule(() => {
-        settleTerminatedProcessIfGone();
+      schedule(async () => {
+        await settleTerminatedProcessIfGone();
         if (settled) return;
-        const processTreeAlive = processTreeIsAlive();
+        const processTreeAlive = await processTreeIsAlive();
         if (settled) return;
         if (!processTreeAlive) {
           schedule(() => failTermination(new Error(
@@ -450,25 +452,25 @@ export function runCommandWithDependencies(command, args, options, dependencies)
     /**
      * @param {number|null} exitCode
      * @param {NodeJS.Signals|null} closeSignal
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function onClose(exitCode, closeSignal) {
+    async function onClose(exitCode, closeSignal) {
+      closeOutcome = {exitCode, signal: closeSignal};
       if (terminationCause) {
-        closeOutcome = {exitCode, signal: closeSignal};
-        settleTerminatedProcessIfGone();
-      } else {
-        closeOutcome = {exitCode, signal: closeSignal};
-        /** @type {CompletedStatus} */
-        let completedStatus;
-        if (exitCode === 0) completedStatus = 'success';
-        else if (exitCode !== null) completedStatus = 'non-zero-exit';
-        else completedStatus = 'signal-exit';
-
-        const processTreeAlive = processTreeIsAlive();
-        if (settled) return;
-        if (processTreeAlive) terminate(completedStatus);
-        else settle(completedStatus, exitCode, closeSignal);
+        await settleTerminatedProcessIfGone();
+        return;
       }
+
+      /** @type {CompletedStatus} */
+      let completedStatus;
+      if (exitCode === 0) completedStatus = 'success';
+      else if (exitCode !== null) completedStatus = 'non-zero-exit';
+      else completedStatus = 'signal-exit';
+
+      const processTreeAlive = await processTreeIsAlive();
+      if (settled) return;
+      if (processTreeAlive) terminate(completedStatus);
+      else settle(completedStatus, exitCode, closeSignal);
     }
 
     /** @returns {void} */
