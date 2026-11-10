@@ -1,4 +1,23 @@
 base_image: kaspernj/tensorbuzz-base-ubuntu-26-04:latest
+
+# Every file the gates below read. A delivery that touches none of them changes
+# nothing a gate can see (`README.md`, `LICENSE`, `.gitignore`), so the build is
+# created as `skipped` instead of run - once the project's path_filter_mode is
+# turned on. `tensorbuzz.yml` itself, an unavailable or capped changed-file list,
+# and a manual rebuild all still run this build, and an invalid entry here is a
+# config error at parse time rather than a silent skip. test/tensorbuzz-paths.test.js
+# keeps this list covering every gate input, so a new source directory cannot be
+# added without extending it deliberately.
+paths:
+  - "src/**"
+  - "test/**"
+  - "scripts/**"
+  - "eslint.config.js"
+  - "tsconfig.json"
+  - "tsconfig.build.json"
+  - "package.json"
+  - "package-lock.json"
+
 before_script:
   - node -v
   - npm ci
